@@ -39,12 +39,13 @@ google_hk_domain = {
 
 google_cn_valid_ip_prefix = '203.208.'
 
-function remote_resolve(dnsserver, qname, timeout)
-  data = _dns_remote_resolve(dnsserver, qname, timeout or 30)
-  return _dns_reply_to_iplist(data or '')
+DNSUtil = {}
+function DNSUtil.remote_resolve(dnsserver, qname, timeout)
+  data = DNSUtil._dns_remote_resolve(dnsserver, qname, timeout or 30)
+  return DNSUtil._dns_reply_to_iplist(data or '')
 end
 
-function _dns_remote_resolve(dnsserver, qname, timeout)
+function DNSUtil._dns_remote_resolve(dnsserver, qname, timeout)
   data = char(random(0,255)) .. char(random(0,255))
   data = data .. "\1\0\0\1\0\0\0\0\0\0"
   data = data .. gsub(qname, "([^.]+)%.?", function(s) return char(#s)..s end) .. '\0'
@@ -64,7 +65,8 @@ function _dns_remote_resolve(dnsserver, qname, timeout)
   return buf
 end
 
-function _dns_reply_to_iplist(data)
+function DNSUtil._dns_reply_to_iplist(data)
+  local iplist = {}
   for i = 1,#data do
     if data:byte(i) == 192 and data:byte(i+2) == 0
        and data:byte(i+3) == 1 and data:byte(i+4) == 0
@@ -74,17 +76,16 @@ function _dns_reply_to_iplist(data)
         digits[#digits + 1] = data:byte(i+j)
       end
       local ip = table.concat(digits, ".")
-      print(ip)
+      iplist[#iplist + 1] = ip
     end
   end
-  local ip = ""
-  return ip
+  return iplist
 end
 
 function main()
   math.randomseed(os.time())
-  s = remote_resolve("8.8.8.8", "www.g.cn", 5)
-  print(s)
+  s = DNSUtil.remote_resolve("8.8.8.8", "www.google.cn", 5)
+  for _,v in ipairs(s) do print(v) end
 end
 
 local debug = require "debug"
