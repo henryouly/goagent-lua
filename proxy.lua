@@ -5,7 +5,24 @@ local char = string.char
 local gsub = string.gsub
 local random = math.random
 
-blacklist = {
+google_cn_domain = {
+  'www.google.cn', 'www.g.cn'
+}
+
+google_cn_ip_predefine = {
+  "203.208.46.131", "203.208.46.132", "203.208.46.133", "203.208.46.134",
+  "203.208.46.135", "203.208.46.136", "203.208.46.137", "203.208.46.138",
+}
+
+google_hk_domain = {
+  "www.google.com", "www.l.google.com", "mail.google.com", "mail.l.google.com",
+  "mail-china.l.google.com"
+}
+
+google_cn_valid_ip_prefix = '203.208.'
+
+DNSUtil = {max_retry = 3}
+DNSUtil.blacklist = {
   -- for ipv6
   '1.1.1.1', '255.255.255.255',
   -- for google+
@@ -23,48 +40,43 @@ blacklist = {
   '216.234.179.13', '243.185.187.3', '243.185.187.39'
 }
 
-google_cn_domain = {
-  'www.google.cn', 'www.g.cn'
-}
-
-google_cn_ip_predefine = {
-  "203.208.46.131", "203.208.46.132", "203.208.46.133", "203.208.46.134",
-  "203.208.46.135", "203.208.46.136", "203.208.46.137", "203.208.46.138",
-}
-
-google_hk_domain = {
-  "www.google.com", "www.l.google.com", "mail.google.com", "mail.l.google.com",
-  "mail-china.l.google.com"
-}
-
-google_cn_valid_ip_prefix = '203.208.'
-
-function remote_resolve(dnsserver, qname, timeout)
-  data = _dns_remote_resolve(dnsserver, qname, timeout or 30)
-  return _dns_reply_to_iplist(data or '')
+function DNSUtil.remote_resolve(dnsserver, qname, timeout)
+  for i = 1,DNSUtil.max_retry do
+    data = DNSUtil._remote_resolve(dnsserver, qname, timeout or 30)
+    ip_list = DNSUtil._reply_to_iplist(data or '')
+    if not DNSUtil._is_bad_reply(ip_list) then
+      return ip_list
+    end
+  end
+  return nil
 end
 
-function _dns_remote_resolve(dnsserver, qname, timeout)
+function DNSUtil._remote_resolve(dnsserver, qname, timeout)
+  local port = 53
+  if type(dnsserver) == "table" then
+    dnsserver, port = unpack(dnsserver)
+  end
   data = char(random(0,255)) .. char(random(0,255))
   data = data .. "\1\0\0\1\0\0\0\0\0\0"
   data = data .. gsub(qname, "([^.]+)%.?", function(s) return char(#s)..s end) .. '\0'
   data = data .. "\0\1\0\1"
   
   local s = socket.udp()
-  s:setpeername(dnsserver, 53)
+  s:setpeername(dnsserver, port)
   s:settimeout(timeout)
   local ok,_ = s:send(data)
   if not ok then
     return nil, "failed to send request to UDP server"
   end
-  local buf,err = s:receive(2^10)
+  local buf,err = s:receive(512)
   if err then
     return nil
   end
   return buf
 end
 
-function _dns_reply_to_iplist(data)
+function DNSUtil._reply_to_iplist(data)
+  local iplist = {}
   for i = 1,#data do
     if data:byte(i) == 192 and data:byte(i+2) == 0
        and data:byte(i+3) == 1 and data:byte(i+4) == 0
@@ -74,17 +86,25 @@ function _dns_reply_to_iplist(data)
         digits[#digits + 1] = data:byte(i+j)
       end
       local ip = table.concat(digits, ".")
-      print(ip)
+      iplist[#iplist + 1] = ip
     end
   end
-  local ip = ""
-  return ip
+  return iplist
+end
+
+function DNSUtil._is_bad_reply(iplist)
+  for _,ip in ipairs(iplist) do
+    if DNSUtil.blacklist[ip] then
+      return true
+    end
+  end
+  return false
 end
 
 function main()
   math.randomseed(os.time())
-  s = remote_resolve("8.8.8.8", "www.g.cn", 5)
-  print(s)
+  s = DNSUtil.remote_resolve("8.8.8.8", "www.google.cn", 5)
+  for _,v in ipairs(s) do print(v) end
 end
 
 local debug = require "debug"
